@@ -1,0 +1,121 @@
+基于UDP的P2P 网络五子棋游戏的设计和实现
+
+摘要   本文介绍了P2P技术和“网络五子棋”的游戏规则及通信协议，并对它们进行研究和分析，并在此基础上设计和实现了一个基于UDP协议的P2P双人对战型网络五子棋游戏。
+
+关键词  P2P；UDP；C#；五子棋；游戏；通信协议
+
+1	引言
+	五子棋是一种家喻户晓的棋类游戏，它的多变吸引了无数的玩家。下面来介绍C#下的 P2P编程的方法制作的“网络五子棋”程序。
+
+2  P2P技术
+	P2P，即英文 Peer-to-Peer 的缩写，中译为对等互联或点对点技术。P2P 技术可以让用户可以直接连接到其他用户的计算机，进行文件共享与交换。同时 P2P 在深度搜索、分布计算、协同工作等方面也大有用途。 
+	P2P是一种用于不同PC用户之间，不经过中继设备直接交换数据或服务的技术，它允许 Internet用户直接使用对方的文件。每个人可以直接连接到其他用户的计算机，并进行文件的交换，而不需要连接到服务器上再进行浏览与下载。因为消除了中间环节，P2P技术使得网络上的沟通变得更容易、更直接。P2P改变了Internet现在的以大网站为中心的状态、重返“非中心化”，并把权力交还给用户。 
+	本程序直观地给出了 P2P（点对点）编程以及建立在 UdpClien 这个类基础上套接口编程的一些基本知识和概念。
+
+3  网络五子棋设计思想
+一、界面设计 
+	下棋需要有棋盘，程序中通过在窗体激活时在 pictureBox1 对象上显示五子棋棋盘图片文件，并在上面绘画棋盘线。界面中要求用户输入对方 IP、端口（本地及对方远端）。 
+
+二、通讯协议 
+	设计的难点在于与对方需要通讯。这里使用了UDP(User Data Protocol)。UDP是用户数据文报协议的简称，两台计算机之间的传输类似于传递邮件；两台之间没有明确的连接，使用 UDP协议建立对等通信。这里虽然两者两台计算机不分主次，但我们设计时假设一台做主机(黑方)，等待其他人加入。其他人想加入的时候输入主机的IP。为了区分通信中传送的是“输赢信息”，“下的棋子位置信息”，“重新开始”等，在发送信息的首部加上代号。
+定义了如下协议： 
+协议	表示的意思
+‘join|’ ’	其他人想加入的时候输入主机的IP
+‘move|’+下的棋子在棋盘上的位置坐标（x,y） 	下的棋子位置信息
+‘over|’+赢方代号 （赢了此局） 	输赢信息
+‘reset|’  （表示要重新开始） 	重新开始
+
+	在下棋过程中，为了保存下过的棋子的位置使用了 Box 数组，Box 数组初值为Chess.none，表示此处无棋子。map 数组可以有枚举 Chess 中{none=0,Black,White}值，分别代表 2种棋子图案，黑子，白子。
+
+三、判断输赢算法 
+	对于五子棋游戏来说，规则非常简单，就是按照先后顺序在棋盘上下棋，直到最先在棋盘上横向、竖向、斜向形成连续的相同色五个棋子的一方为胜。 
+	对于算法具体实现大致分为以下几个部分： 
+	判断X=Y 轴上是否形成五子连珠 
+	判断X=-Y 轴上是否形成五子连珠 
+	判断 X 轴上是否形成五子连珠 
+	判断Y 轴上是否形成五子连珠 
+	以上四种情况只要任何一种成立，那么就可以判断输赢。 
+	本程序 win_lose()函数扫描整个棋盘，判断是否连成五子，返回 true或 false。如果能得到刚下的棋子位置，就不用扫描整个棋盘，而仅仅在此棋子附近判断即可，在下一节的例子中就采用刚下的棋子附近判断。 
+	本程序中每下一步棋子，调用win_lose()函数判断是否已经连成五子，如果返回true，则说明已经连成五子，状态栏显示输赢结果。无论是否已经连成五子，均将本步信息传到对方。win_lose()函数中对棋盘的横竖斜方向均判断一遍，来达到检测出输赢。
+
+4  窗体界面和关键代码
+	整个窗体界面如下:
+ 
+一、	启动后台线程：
+运行程序后，手动填写对方IP地址和端口，以及本地端口。然后点击开始按钮就可以创建并启动一个后台进程，并且发送‘join|’’协议信息给对方，表示加入对战游戏。
+部分代码如下：
+			//创建一个线程 
+			private Thread  th;//定义一个线程，在线程接收信息
+            th  =  new  Thread(new  ThreadStart(read));
+            //启动线程 
+            th.Start();
+			send("join|");
+	
+二、	侦听端口：
+后台进程将调用read()函数。该函数将侦听本地的端口号，及对方发送来的信息，并根据通信协议对接收到的信息做相应的处理：
+部分代码如下：
+		private void read ( )
+        {
+			// 定义一个远程结点，用以获取远程计算机IP地址和发送的信息
+			IPEndPoint remote; 
+            //侦听本地的端口号 
+            udpclient = new UdpClient(Convert.ToInt32(txt_localport.Text));
+			//得到对方发送来的信息
+            Byte[] data = udpclient.Receive(ref remote);
+            String strData = enc.GetString(data);
+            string[] a = new string[5];
+            a = strData.Split('|');
+            switch (a[0])
+            {
+              case "join":
+                   // 获取传送信息到本地端口号的远程计算机IP地址 
+              case "move":
+                   // 获取对方下的棋子位置坐标，然后在棋盘上描绘出来
+              case "over":
+					// 赢方代号（赢了此局）
+              case "reset":
+                   //  重新开始
+            }
+        }
+
+三、	双方传送送信息：
+	双方之间的通信过程将调用send(string info)函数。该函数创建UDP网络服务，传送信息（info）到对方计算机指定的端口号。
+部分代码如下：
+		private void send(string info)
+        {
+            //创建UDP网络服务 
+            UdpClient  SendUdp = new  UdpClient();
+            IPAddress  remoteIP;
+            IPEndPoint  remoteep = new  IPEndPoint(remoteIP, Convert.ToInt32(txt_remoteport.Text));
+            Byte[] buffer = null;
+            Encoding enc = Encoding.Unicode;
+            string str = info;
+            buffer = enc.GetBytes(str.ToCharArray());
+            //传送信息到指定计算机的txt_remoteport端口号 
+            SendUdp.Send(buffer, buffer.Length, remoteep);
+            //关闭UDP网络服务 
+            SendUdp.Close();
+        }
+四、	下棋：
+	使用鼠标在棋盘上点击，将触发事件pictureBox1_MouseDown。该事件显示相应位置的棋子，且发送棋子的位置给对方，并将调用win_lose()函数扫描整个棋盘，判断是否连成五颗。
+部分代码如下：
+		private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
+        {
+            Graphics g = this.pictureBox1.CreateGraphics();
+            int x = e.X / rectPix;
+            int y = e.Y / rectPix;
+            if (Box[x, y] != Chess.none) 
+                return;
+            Image im = Image.FromFile(@"..\..\Resources\" + mplayer.ToString() + ".gif");
+            g.DrawImage(im, x * rectPix , y * rectPix , rectPix, rectPix); // 在(x,y)位置画棋子
+            Box[x, y] = mplayer;
+            string str_send = "move|" + x + "|" + y;
+            send(str_send);
+            if (win_lose() == true)// 扫描整个棋盘，判断是否连成五颗
+            {  
+                str_send = "over|" + mplayer.ToString();
+                send(str_send);
+            } 
+        }
+五、	运行结果：
+ 
